@@ -12,7 +12,8 @@ const HEX_RE = /\b0x[0-9a-f]{6,}\b/gi;
 const IP_RE = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g;
 const PATH_SEGMENT_RE = /\/[0-9a-f]{8,}/gi;
 
-const HTTP_LOG_RE = /(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\S+)\s+(\d{3})(?:\s+(\d+(?:\.\d+)?)\s*ms)?/;
+const HTTP_LOG_RE =
+  /(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\S+)\s+(\d{3})(?:\s+(\d+(?:\.\d+)?)\s*ms)?/g;
 
 const ERROR_KEYWORDS = /\b(error|err|fatal|panic|exception|fail|crash|killed|oom|segfault|ECONNREFUSED|ENOTFOUND|ETIMEDOUT)\b/i;
 const WARNING_KEYWORDS = /\b(warn|warning|deprecated|slow|timeout|retry)\b/i;
@@ -123,20 +124,22 @@ export class LogProcessor {
     let total = 0;
 
     for (const entry of entries) {
-      const match = HTTP_LOG_RE.exec(entry.message);
-      if (!match) continue;
-      const [, path, statusStr, msStr] = match;
-      const statusGroup = statusStr[0] + 'xx';
-      const ms = msStr ? parseFloat(msStr) : 0;
+      HTTP_LOG_RE.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = HTTP_LOG_RE.exec(entry.message)) !== null) {
+        const [, path, statusStr, msStr] = match;
+        const statusGroup = statusStr[0] + 'xx';
+        const ms = msStr ? parseFloat(msStr) : 0;
 
-      total++;
-      byStatus[statusGroup] = (byStatus[statusGroup] ?? 0) + 1;
+        total++;
+        byStatus[statusGroup] = (byStatus[statusGroup] ?? 0) + 1;
 
-      const existing = pathStats.get(path) ?? { count: 0, totalMs: 0, errors: 0 };
-      existing.count++;
-      existing.totalMs += ms;
-      if (statusStr.startsWith('4') || statusStr.startsWith('5')) existing.errors++;
-      pathStats.set(path, existing);
+        const existing = pathStats.get(path) ?? { count: 0, totalMs: 0, errors: 0 };
+        existing.count++;
+        existing.totalMs += ms;
+        if (statusStr.startsWith('4') || statusStr.startsWith('5')) existing.errors++;
+        pathStats.set(path, existing);
+      }
     }
 
     if (total === 0) return null;
