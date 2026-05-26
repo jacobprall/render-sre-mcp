@@ -31,6 +31,12 @@ export interface DescribeContext {
   lastRefreshOk: boolean;
 }
 
+function freshnessFooter(snapshot: TopologySnapshot): string {
+  const iso = new Date(snapshot.fetchedAt).toISOString();
+  const time = iso.slice(11, 19);
+  return `\n(Infrastructure state as of ${time} UTC)`;
+}
+
 export function describeTool(toolName: string, ctx: DescribeContext): string {
   const base = BASE_DESCRIPTIONS[toolName];
   if (!base) return toolName;
@@ -41,24 +47,26 @@ export function describeTool(toolName: string, ctx: DescribeContext): string {
     return base + '\n\n(Loading infrastructure state...)';
   }
 
+  const footer = freshnessFooter(ctx.snapshot);
+
   switch (toolName) {
     case 'render_deploy':
     case 'render_restart':
     case 'render_run_command':
     case 'render_deploys':
     case 'render_configure':
-      return base + '\n\n' + formatServicesTable(ctx.snapshot, false);
+      return base + '\n\n' + formatServicesTable(ctx.snapshot, false) + footer;
 
     case 'render_logs':
     case 'render_diagnose':
-      return base + '\n\n' + formatLogsTable(ctx.snapshot);
+      return base + '\n\n' + formatLogsTable(ctx.snapshot) + footer;
 
     case 'render_env_vars':
-      return base + '\n\n' + formatEnvVarsTable(ctx.snapshot);
+      return base + '\n\n' + formatEnvVarsTable(ctx.snapshot) + footer;
 
     case 'render_inspect':
     case 'render_metrics':
-      return base + '\n\n' + formatAllResourcesTable(ctx.snapshot);
+      return base + '\n\n' + formatAllResourcesTable(ctx.snapshot) + footer;
 
     default:
       return base;

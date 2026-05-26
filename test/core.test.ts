@@ -303,6 +303,7 @@ describe('topology descriptions and tables', () => {
     assert.match(desc, /Resources:/);
     assert.match(desc, /srv-abc123/);
     assert.match(desc, /2 errors in last 10m/);
+    assert.match(desc, /Infrastructure state as of \d{2}:\d{2}:\d{2} UTC/);
   });
 
   it('shows loading message when snapshot missing but refresh ok', () => {

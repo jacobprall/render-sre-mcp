@@ -12,7 +12,6 @@ An SRE teammate for your Render infrastructure, delivered via MCP server. Connec
 - **Resource inspection** — `render_inspect` deep-dives any service, Postgres, or Key Value store.
 - **Remediation** — `render_deploy`, `render_restart`, `render_run_command`, `render_env_vars`, and `render_configure` with tiered safety: safe changes apply immediately, risky changes require explicit confirmation.
 
-
 ## Deploy on Render
 
 1. Create a Blueprint from this repo's `render.yaml`.
