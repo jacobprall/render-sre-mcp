@@ -4,7 +4,7 @@ import {
   formatEnvVarsTable,
   formatLogsTable,
   formatServicesTable,
-} from './format-tables.js';
+} from './formatTables.js';
 
 export const BASE_DESCRIPTIONS: Record<string, string> = {
   render_deploy: 'Trigger a deploy on a Render service.',

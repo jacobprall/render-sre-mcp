@@ -13,7 +13,7 @@ import {
   formatAllResourcesTable,
   formatLogsTable,
   formatServicesTable,
-} from '../src/domain/topology/format-tables.js';
+} from '../src/domain/topology/formatTables.js';
 import {
   computeHotResourceIds,
   computeHotServiceIds,
@@ -411,18 +411,18 @@ describe('MCP schemas', () => {
 
 describe('MCP error handling', () => {
   it('maps RenderAuthError to auth message', () => {
-    const result = handleError(new RenderAuthError());
+    const result = handleError(new RenderAuthError('Unauthorized'));
     assert.equal(result.isError, true);
     assert.match(result.content[0]!.text, /authentication failed/i);
   });
 
   it('maps network and timeout errors', () => {
-    assert.match(handleError(new RenderNetworkError()).content[0]!.text, /unreachable/i);
-    assert.match(handleError(new RenderTimeoutError()).content[0]!.text, /unreachable/i);
+    assert.match(handleError(new RenderNetworkError('Connection reset')).content[0]!.text, /unreachable/i);
+    assert.match(handleError(new RenderTimeoutError('Request timed out', 30_000)).content[0]!.text, /unreachable/i);
   });
 
   it('maps rate limit by class and status text', () => {
-    assert.match(handleError(new RenderRateLimitError()).content[0]!.text, /rate limit/i);
+    assert.match(handleError(new RenderRateLimitError('Too many requests')).content[0]!.text, /rate limit/i);
     assert.match(handleError(new Error('HTTP 429')).content[0]!.text, /rate limit/i);
   });
 
