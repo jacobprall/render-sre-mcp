@@ -1,0 +1,35 @@
+{
+  "name": "render-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server with dynamic tool descriptions for Render infrastructure",
+  "type": "module",
+  "bin": {
+    "render-mcp-server": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [
+    "mcp",
+    "render",
+    "infrastructure",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "express": "^5.2.1",
+    "render-api": "^1.2.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  }
+}

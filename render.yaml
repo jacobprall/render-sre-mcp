@@ -1,0 +1,13 @@
+services:
+  - type: web
+    runtime: node
+    name: render-mcp-server
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: RENDER_API_KEY
+        sync: false
+      - key: NODE_ENV
+        value: production
