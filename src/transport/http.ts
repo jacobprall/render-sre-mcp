@@ -3,6 +3,7 @@ import { loadConfig } from '../config.js';
 import { getHotResourceTracker } from '../hot-resources.js';
 import { createServer } from '../mcp/server.js';
 import { TopologyCache } from '../domain/topology/cache.js';
+import { createWebhookHandler } from '../webhooks/handler.js';
 import { verifyToken } from './auth.js';
 
 export async function startHttp(port: number): Promise<void> {
@@ -34,7 +35,24 @@ export async function startHttp(port: number): Promise<void> {
 
   const hotTracker = getHotResourceTracker();
   const topology = new TopologyCache(hotTracker);
-  const mcpServer = await createServer(topology);
+  const { mcpServer, notifyDescriptionsChanged } = await createServer(topology);
+
+  if (config.webhookSecret) {
+    const webhookHandler = createWebhookHandler({
+      secret: config.webhookSecret,
+      topology,
+      notifyDescriptionsChanged: () => {
+        void notifyDescriptionsChanged();
+      },
+      debounceMs: config.webhookNotifyDebounceMs,
+    });
+    app.post(
+      '/webhooks/render',
+      express.raw({ type: 'application/json' }),
+      webhookHandler
+    );
+    console.log(`Webhook endpoint: http://localhost:${port}/webhooks/render`);
+  }
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),

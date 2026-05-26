@@ -6,7 +6,8 @@ export async function startStdio(): Promise<void> {
   const { StdioServerTransport } = await import('@modelcontextprotocol/server');
   const hotTracker = getHotResourceTracker();
   const topology = new TopologyCache(hotTracker);
-  const mcpServer = await createServer(topology);
+  // Webhooks require public HTTP; stdio mode uses cache TTL refresh only.
+  const { mcpServer } = await createServer(topology);
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
   process.stderr.write('render-mcp-server started (stdio mode)\n');

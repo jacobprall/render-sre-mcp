@@ -17,7 +17,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "node --import tsx --test test/**/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts test/webhooks/*.test.ts"
   },
   "keywords": [
     "mcp",

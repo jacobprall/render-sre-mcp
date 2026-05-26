@@ -1,9 +1,14 @@
 import { loadConfig } from '../../config.js';
 import type { HotResourceTracker } from '../../hot-resources.js';
 import * as api from '../../render-api.js';
-import type { TopologySnapshot } from '../../types/topology.js';
+import type { DeployHint, TopologySnapshot } from '../../types/topology.js';
 import { describeTool } from './descriptions.js';
 import { enrichDeployHints } from './enrich.js';
+
+const MAX_PROCESSED_EVENTS = 100;
+const EVENT_DEDUP_MS = 5 * 60 * 1000;
+
+export type ApplyDeployEventResult = 'applied' | 'duplicate' | 'unknown_service' | 'no_snapshot';
 
 export class TopologyCache {
   snapshot: TopologySnapshot | null = null;
@@ -14,6 +19,7 @@ export class TopologyCache {
   private lastChanged = false;
   private lastRefreshOk = false;
   private readonly hotTracker: HotResourceTracker;
+  private readonly processedEvents = new Map<string, number>();
 
   constructor(hotTracker: HotResourceTracker, ttlMs?: number) {
     this.hotTracker = hotTracker;
@@ -46,6 +52,46 @@ export class TopologyCache {
       snapshot: this.snapshot,
       lastRefreshOk: this.lastRefreshOk,
     });
+  }
+
+  applyDeployEvent(
+    serviceId: string,
+    hint: DeployHint,
+    eventId?: string
+  ): ApplyDeployEventResult {
+    if (!this.snapshot) return 'no_snapshot';
+
+    if (eventId) {
+      const seenAt = this.processedEvents.get(eventId);
+      if (seenAt !== undefined && Date.now() - seenAt < EVENT_DEDUP_MS) {
+        return 'duplicate';
+      }
+      this.recordProcessedEvent(eventId);
+    }
+
+    const known = this.snapshot.services.some(s => s.id === serviceId);
+    if (!known) return 'unknown_service';
+
+    this.snapshot.deployHints.set(serviceId, hint);
+    const now = Date.now();
+    this.snapshot.fetchedAt = now;
+    this.fetchedAt = now;
+    this.lastChanged = true;
+    return 'applied';
+  }
+
+  private recordProcessedEvent(eventId: string) {
+    this.processedEvents.set(eventId, Date.now());
+    if (this.processedEvents.size <= MAX_PROCESSED_EVENTS) return;
+    let oldestId: string | null = null;
+    let oldestAt = Infinity;
+    for (const [id, at] of this.processedEvents) {
+      if (at < oldestAt) {
+        oldestAt = at;
+        oldestId = id;
+      }
+    }
+    if (oldestId) this.processedEvents.delete(oldestId);
   }
 
   private async _doRefresh(): Promise<boolean> {

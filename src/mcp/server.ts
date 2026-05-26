@@ -3,9 +3,16 @@ import { getHotResourceTracker } from '../hot-resources.js';
 import { TopologyCache } from '../domain/topology/cache.js';
 import { registerTools } from './tool-registry.js';
 
-const DEBOUNCE_MS = 5_000;
+const TOOL_REFRESH_DEBOUNCE_MS = 5_000;
 
-export async function createServer(topology?: TopologyCache) {
+export interface CreateServerResult {
+  mcpServer: McpServer;
+  topology: TopologyCache;
+  updateAllDescriptions: () => void;
+  notifyDescriptionsChanged: () => Promise<void>;
+}
+
+export async function createServer(topology?: TopologyCache): Promise<CreateServerResult> {
   const hotTracker = getHotResourceTracker();
   const topo = topology ?? new TopologyCache(hotTracker);
   await topo.ensureFresh();
@@ -15,18 +22,7 @@ export async function createServer(topology?: TopologyCache) {
     { capabilities: { tools: { listChanged: true } } }
   );
 
-  let lastNotification = 0;
-
-  async function refreshAndNotify() {
-    try {
-      const changed = await topo.refresh();
-      if (changed && Date.now() - lastNotification > DEBOUNCE_MS) {
-        lastNotification = Date.now();
-        updateAllDescriptions();
-        await mcpServer.server.sendToolListChanged();
-      }
-    } catch { /* best effort */ }
-  }
+  let lastToolRefreshNotification = 0;
 
   const registeredTools = registerTools(mcpServer, topo, hotTracker, () => {
     void refreshAndNotify();
@@ -38,5 +34,26 @@ export async function createServer(topology?: TopologyCache) {
     }
   }
 
-  return mcpServer;
+  async function refreshAndNotify() {
+    try {
+      const changed = await topo.refresh();
+      if (changed && Date.now() - lastToolRefreshNotification > TOOL_REFRESH_DEBOUNCE_MS) {
+        lastToolRefreshNotification = Date.now();
+        updateAllDescriptions();
+        await mcpServer.server.sendToolListChanged();
+      }
+    } catch { /* best effort */ }
+  }
+
+  async function notifyDescriptionsChanged() {
+    updateAllDescriptions();
+    await mcpServer.server.sendToolListChanged();
+  }
+
+  return {
+    mcpServer,
+    topology: topo,
+    updateAllDescriptions,
+    notifyDescriptionsChanged,
+  };
 }

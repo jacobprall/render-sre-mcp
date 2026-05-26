@@ -4,6 +4,9 @@ export interface AppConfig {
   port: number | null;
   cacheTtlMs: number;
   logDefaultWindowMin: number;
+  /** Render workspace webhook signing secret; enables POST /webhooks/render when set */
+  webhookSecret?: string;
+  webhookNotifyDebounceMs: number;
 }
 
 let cached: AppConfig | null = null;
@@ -26,8 +29,18 @@ export function loadConfig(): AppConfig {
 
   const cacheTtlMs = parsePositiveInt(process.env.RENDER_CACHE_TTL_MS, 30000);
   const logDefaultWindowMin = parsePositiveInt(process.env.RENDER_LOG_DEFAULT_WINDOW_MIN, 10);
+  const webhookSecret = process.env.RENDER_WEBHOOK_SECRET?.trim() || undefined;
+  const webhookNotifyDebounceMs = parsePositiveInt(process.env.RENDER_WEBHOOK_DEBOUNCE_MS, 2000);
 
-  cached = { renderApiKey, mcpAuthToken, port, cacheTtlMs, logDefaultWindowMin };
+  cached = {
+    renderApiKey,
+    mcpAuthToken,
+    port,
+    cacheTtlMs,
+    logDefaultWindowMin,
+    webhookSecret,
+    webhookNotifyDebounceMs,
+  };
   return cached;
 }
 
