@@ -1,20 +1,49 @@
 import * as api from '../render-api.js';
 import type { TopologySnapshot, ToolCallResult } from '../types.js';
-import { getResourceType, getResourceName } from '../types.js';
+import { getResourceType, getResourceName, ID_PREFIX } from '../types.js';
+
+interface ServiceDetails {
+  plan?: string;
+  region?: string;
+  url?: string;
+}
+
+interface DeployCommit {
+  id?: string;
+  message?: string;
+}
+
+interface DeployWithCommit {
+  id: string;
+  status?: string;
+  createdAt?: string;
+  finishedAt?: string;
+  commit?: DeployCommit;
+}
 
 export async function handleInspect(
   args: { resourceId: string },
   snapshot: TopologySnapshot
 ): Promise<ToolCallResult> {
   const type = getResourceType(args.resourceId);
+  if (!type) {
+    return {
+      content: [{
+        type: 'text',
+        text: `Unknown resource ID: "${args.resourceId}". Expected prefix: ${ID_PREFIX.service}, ${ID_PREFIX.postgres}, or ${ID_PREFIX.keyvalue}`,
+      }],
+      isError: true,
+    };
+  }
+
   const name = getResourceName(snapshot, args.resourceId) ?? args.resourceId;
 
   if (type === 'service') {
     const service = await api.retrieveService(args.resourceId);
     const deploys = await api.fetchDeploys(args.resourceId, 1);
-    const lastDeploy = deploys[0];
+    const lastDeploy = deploys[0] as DeployWithCommit | undefined;
 
-    const details = service.serviceDetails as any;
+    const details = service.serviceDetails as ServiceDetails | undefined;
     const lines: string[] = [
       `## ${service.name} (${service.id})`,
       `Type: ${service.type}`,
@@ -29,10 +58,9 @@ export async function handleInspect(
       lines.push('');
       lines.push('### Last Deploy');
       lines.push(`ID: ${lastDeploy.id}`);
-      lines.push(`Status: ${lastDeploy.status}`);
-      const commit = (lastDeploy as any).commit;
-      if (commit) {
-        lines.push(`Commit: ${commit.id?.slice(0, 7) ?? '?'} — ${commit.message ?? ''}`);
+      lines.push(`Status: ${lastDeploy.status ?? 'unknown'}`);
+      if (lastDeploy.commit) {
+        lines.push(`Commit: ${lastDeploy.commit.id?.slice(0, 7) ?? '?'} — ${lastDeploy.commit.message ?? ''}`);
       }
       lines.push(`Created: ${lastDeploy.createdAt ?? 'unknown'}`);
       if (lastDeploy.finishedAt) lines.push(`Finished: ${lastDeploy.finishedAt}`);
@@ -56,11 +84,12 @@ export async function handleInspect(
       `Created: ${db.createdAt?.slice(0, 10) ?? 'unknown'}`,
     ];
 
-    if ((db as any).primaryConnectionString || (db as any).internalConnectionString) {
+    const dbAny = db as Record<string, unknown>;
+    if (dbAny.internalConnectionString || dbAny.primaryConnectionString) {
       lines.push('');
       lines.push('### Connection');
-      if ((db as any).internalConnectionString) lines.push(`Internal: ${(db as any).internalConnectionString}`);
-      if ((db as any).externalConnectionString) lines.push(`External: ${(db as any).externalConnectionString}`);
+      if (dbAny.internalConnectionString) lines.push(`Internal: ${dbAny.internalConnectionString}`);
+      if (dbAny.externalConnectionString) lines.push(`External: ${dbAny.externalConnectionString}`);
     }
 
     return { content: [{ type: 'text', text: lines.join('\n') }] };
@@ -68,9 +97,9 @@ export async function handleInspect(
 
   if (type === 'keyvalue') {
     const kv = await api.retrieveKeyValue(args.resourceId);
-    let connInfo: any = null;
+    let connInfo: Record<string, unknown> | null = null;
     try {
-      connInfo = await api.getKeyValueConnectionInfo(args.resourceId);
+      connInfo = await api.getKeyValueConnectionInfo(args.resourceId) as Record<string, unknown>;
     } catch { /* connection info may not be available */ }
 
     const lines: string[] = [

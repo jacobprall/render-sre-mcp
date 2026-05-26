@@ -10,15 +10,18 @@ export async function handleRunCommand(
   const job = await api.createJob(args.serviceId, args.command);
 
   const maxWait = 120_000;
-  const pollInterval = 3_000;
   const start = Date.now();
   let current = job;
+  let pollInterval = 3_000;
 
   while (Date.now() - start < maxWait) {
     if (current.status === 'succeeded' || current.status === 'failed') break;
     await new Promise(r => setTimeout(r, pollInterval));
     current = await api.retrieveJob(args.serviceId, current.id);
+    pollInterval = Math.min(pollInterval * 1.5, 10_000);
   }
+
+  const timedOut = current.status !== 'succeeded' && current.status !== 'failed';
 
   const lines: string[] = [
     `## Command: ${args.command}`,
@@ -29,6 +32,12 @@ export async function handleRunCommand(
 
   if (current.startedAt) lines.push(`Started: ${current.startedAt}`);
   if (current.finishedAt) lines.push(`Finished: ${current.finishedAt}`);
+
+  if (timedOut) {
+    lines.push('');
+    lines.push('⚠ Agent polling timed out after 120s. The job is still running on Render.');
+    lines.push('Check status in the Render Dashboard or call render_inspect later.');
+  }
 
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }

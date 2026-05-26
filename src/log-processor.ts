@@ -101,10 +101,13 @@ export class LogProcessor {
 
   correlate(patterns: LogPattern[]): void {
     const WINDOW_MS = 30_000;
-    for (let i = 0; i < patterns.length; i++) {
-      for (let j = i + 1; j < patterns.length; j++) {
-        const a = patterns[i];
-        const b = patterns[j];
+    const MAX_CORRELATE = 50;
+    const subset = patterns.slice(0, MAX_CORRELATE);
+
+    for (let i = 0; i < subset.length; i++) {
+      for (let j = i + 1; j < subset.length; j++) {
+        const a = subset[i];
+        const b = subset[j];
         const timeDiff = Math.abs(a.firstSeen.getTime() - b.firstSeen.getTime());
         if (timeDiff <= WINDOW_MS) {
           if (!a.correlatedWith.includes(b.template)) a.correlatedWith.push(b.template);

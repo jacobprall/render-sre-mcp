@@ -1,5 +1,6 @@
 import * as api from '../render-api.js';
 import { LogProcessor } from '../log-processor.js';
+import { loadConfig } from '../config.js';
 import type { TopologySnapshot, ToolCallResult } from '../types.js';
 import { getResourceName } from '../types.js';
 
@@ -18,9 +19,9 @@ export async function handleLogs(
   snapshot: TopologySnapshot
 ): Promise<ToolCallResult> {
   const name = getResourceName(snapshot, args.resourceId) ?? args.resourceId;
-  const windowMinutes = Number(process.env.RENDER_LOG_DEFAULT_WINDOW_MIN ?? 10);
+  const config = loadConfig();
   const endTime = args.endTime ?? new Date().toISOString();
-  const startTime = args.startTime ?? new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+  const startTime = args.startTime ?? new Date(Date.now() - config.logDefaultWindowMin * 60 * 1000).toISOString();
 
   const severityMap: Record<string, 'error' | 'warn' | 'info'> = {
     error: 'error',

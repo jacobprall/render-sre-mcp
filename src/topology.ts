@@ -1,5 +1,10 @@
-import type { TopologySnapshot, ErrorIndicator } from './types.js';
+import type { TopologySnapshot, ErrorIndicator, DeployHint, PressureHint } from './types.js';
+import type { HotResourceTracker } from './hot-resources.js';
+import { computeHotResourceIds, computeHotServiceIds } from './hot-resources.js';
+import { loadConfig } from './config.js';
 import * as api from './render-api.js';
+
+const MAX_CONCURRENCY = 8;
 
 const TYPE_LABELS: Record<string, string> = {
   static_site: 'static',
@@ -9,9 +14,38 @@ const TYPE_LABELS: Record<string, string> = {
   cron_job: 'cron',
 };
 
-function serviceStatusLabel(s: { suspended: string; type: string }): string {
+function serviceStatusLabel(s: { suspended: string }): string {
   if (s.suspended === 'suspended') return 'suspended';
   return 'deployed';
+}
+
+function formatAge(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '?';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 48) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+async function runWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number
+): Promise<T[]> {
+  const results: T[] = [];
+  let idx = 0;
+
+  async function next(): Promise<void> {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => next());
+  await Promise.all(workers);
+  return results;
 }
 
 export class TopologyCache {
@@ -21,9 +55,13 @@ export class TopologyCache {
   private refreshing: Promise<boolean> | null = null;
   private previousHash = '';
   private lastChanged = false;
+  private lastRefreshOk = false;
+  private readonly hotTracker: HotResourceTracker;
 
-  constructor(ttlMs?: number) {
-    this.ttlMs = ttlMs ?? Number(process.env.RENDER_CACHE_TTL_MS ?? 30000);
+  constructor(hotTracker: HotResourceTracker, ttlMs?: number) {
+    this.hotTracker = hotTracker;
+    const config = loadConfig();
+    this.ttlMs = ttlMs ?? config.cacheTtlMs;
   }
 
   isStale(): boolean {
@@ -52,18 +90,28 @@ export class TopologyCache {
 
   private async _doRefresh(): Promise<boolean> {
     const [services, databases, keyValueStores] = await Promise.all([
-      api.fetchServices().catch((err) => { process.stderr.write(`Warning: failed to fetch services: ${err.message}\n`); return []; }),
-      api.fetchPostgres().catch((err) => { process.stderr.write(`Warning: failed to fetch postgres: ${err.message}\n`); return []; }),
-      api.fetchKeyValue().catch((err) => { process.stderr.write(`Warning: failed to fetch key-value stores: ${err.message}\n`); return []; }),
+      api.fetchServices().catch((err) => { process.stderr.write(`Warning: failed to fetch services: ${err.message}\n`); return null; }),
+      api.fetchPostgres().catch((err) => { process.stderr.write(`Warning: failed to fetch postgres: ${err.message}\n`); return null; }),
+      api.fetchKeyValue().catch((err) => { process.stderr.write(`Warning: failed to fetch key-value stores: ${err.message}\n`); return null; }),
     ]);
+
+    if (services === null && databases === null && keyValueStores === null) {
+      this.lastRefreshOk = false;
+      return false;
+    }
+
+    const svcList = services ?? this.snapshot?.services ?? [];
+    const dbList = databases ?? this.snapshot?.databases ?? [];
+    const kvList = keyValueStores ?? this.snapshot?.keyValueStores ?? [];
+
+    const config = loadConfig();
+    const windowMinutes = config.logDefaultWindowMin;
+    const startTime = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
 
     const envVarCounts = new Map<string, number>();
     const errorIndicators = new Map<string, ErrorIndicator>();
 
-    const windowMinutes = Number(process.env.RENDER_LOG_DEFAULT_WINDOW_MIN ?? 10);
-    const startTime = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
-
-    const indicatorPromises = services.map(async (svc) => {
+    const indicatorTasks = svcList.map(svc => async () => {
       try {
         const logs = await api.fetchServiceLogs(svc.id, {
           startTime,
@@ -80,7 +128,7 @@ export class TopologyCache {
       }
     });
 
-    const envVarPromises = services.map(async (svc) => {
+    const envVarTasks = svcList.map(svc => async () => {
       try {
         const vars = await api.fetchEnvVars(svc.id);
         envVarCounts.set(svc.id, vars.length);
@@ -89,10 +137,74 @@ export class TopologyCache {
       }
     });
 
-    await Promise.all([...indicatorPromises, ...envVarPromises]);
+    await runWithConcurrency([...indicatorTasks, ...envVarTasks], MAX_CONCURRENCY);
 
-    this.snapshot = { services, databases, keyValueStores, fetchedAt: Date.now(), envVarCounts, errorIndicators };
+    const partialSnapshot: TopologySnapshot = {
+      services: svcList,
+      databases: dbList,
+      keyValueStores: kvList,
+      fetchedAt: Date.now(),
+      envVarCounts,
+      errorIndicators,
+      deployHints: new Map(),
+      pressureHints: new Map(),
+    };
+
+    const hotServices = computeHotServiceIds(partialSnapshot, this.hotTracker);
+    const hotResources = computeHotResourceIds(partialSnapshot, this.hotTracker);
+
+    const deployHints = new Map<string, DeployHint>();
+    const pressureHints = new Map<string, PressureHint>();
+
+    const deployTasks = [...hotServices].map(serviceId => async () => {
+      try {
+        const deploys = await api.fetchDeployHistory(serviceId, 1);
+        const d = deploys[0];
+        if (!d) return;
+        const liveAt = d.finishedAt ?? d.updatedAt ?? d.createdAt ?? '';
+        deployHints.set(serviceId, {
+          ageLabel: liveAt ? formatAge(liveAt) : '?',
+          status: d.status ?? 'unknown',
+          deployId: d.id,
+        });
+      } catch { /* omit hint */ }
+    });
+
+    const pressureTasks = [...hotResources].map(resourceId => async () => {
+      try {
+        const end = new Date();
+        const start = new Date(end.getTime() - 15 * 60 * 1000);
+        const bundle = await api.fetchMetricsBundle(resourceId, { start, end });
+        const hint: PressureHint = {};
+
+        const memPeak = bundle.memory?.length
+          ? Math.max(...bundle.memory.map(p => p.value))
+          : undefined;
+        const memLimit = bundle.memoryLimit?.length
+          ? Math.max(...bundle.memoryLimit.map(p => p.value))
+          : undefined;
+        if (memPeak != null && memLimit != null && memLimit > 0) {
+          const pct = Math.round((memPeak / memLimit) * 100);
+          if (pct >= 75) hint.memoryPct = pct;
+        }
+        if (bundle.httpLatencyP95Peak != null && bundle.httpLatencyP95Peak > 1500) {
+          hint.p95LatencyMs = Math.round(bundle.httpLatencyP95Peak);
+        }
+
+        if (hint.memoryPct != null || hint.p95LatencyMs != null) {
+          pressureHints.set(resourceId, hint);
+        }
+      } catch { /* omit */ }
+    });
+
+    await runWithConcurrency([...deployTasks, ...pressureTasks], MAX_CONCURRENCY);
+
+    partialSnapshot.deployHints = deployHints;
+    partialSnapshot.pressureHints = pressureHints;
+
+    this.snapshot = partialSnapshot;
     this.fetchedAt = Date.now();
+    this.lastRefreshOk = true;
 
     const hash = this.computeHash();
     this.lastChanged = hash !== this.previousHash;
@@ -108,50 +220,79 @@ export class TopologyCache {
       ...this.snapshot.databases.map(d => `${d.id}:${d.status}:${d.updatedAt}`),
       ...this.snapshot.keyValueStores.map(k => `${k.id}:${k.status}:${k.updatedAt}`),
     ];
+    for (const [id, h] of this.snapshot.deployHints) {
+      ids.push(`deploy:${id}:${h.status}:${h.ageLabel}`);
+    }
+    for (const [id, p] of this.snapshot.pressureHints) {
+      ids.push(`pressure:${id}:${p.memoryPct ?? ''}:${p.p95LatencyMs ?? ''}`);
+    }
     return ids.sort().join('|');
   }
 
   describe(toolName: string): string {
     const base = BASE_DESCRIPTIONS[toolName];
     if (!base) return toolName;
-    if (!this.snapshot) return base + '\n\n(Loading infrastructure state...)';
-
-    const s = this.snapshot;
+    if (!this.snapshot) {
+      if (!this.lastRefreshOk) return base + '\n\n(Unable to reach Render API — will retry on next call.)';
+      return base + '\n\n(Loading infrastructure state...)';
+    }
 
     switch (toolName) {
       case 'render_deploy':
+      case 'render_restart':
+      case 'render_run_command':
+      case 'render_deploys':
+      case 'render_configure':
         return base + '\n\n' + this.formatServicesTable(false);
 
       case 'render_logs':
+      case 'render_diagnose':
         return base + '\n\n' + this.formatLogsTable();
 
       case 'render_env_vars':
         return base + '\n\n' + this.formatEnvVarsTable();
 
       case 'render_inspect':
+      case 'render_metrics':
         return base + '\n\n' + this.formatAllResourcesTable();
-
-      case 'render_restart':
-        return base + '\n\n' + this.formatServicesTable(false);
-
-      case 'render_run_command':
-        return base + '\n\n' + this.formatServicesTable(false);
 
       default:
         return base;
     }
   }
 
-  resourceIds(filter?: 'services' | 'all'): string[] {
+  resourceIds(filter?: 'services' | 'postgres' | 'all'): string[] {
     if (!this.snapshot) return [];
     if (filter === 'services') {
       return this.snapshot.services.map(s => s.id);
+    }
+    if (filter === 'postgres') {
+      return this.snapshot.databases.map(d => d.id);
     }
     return [
       ...this.snapshot.services.map(s => s.id),
       ...this.snapshot.databases.map(d => d.id),
       ...this.snapshot.keyValueStores.map(k => k.id),
     ];
+  }
+
+  private pressureLabel(resourceId: string): string {
+    const hint = this.snapshot?.pressureHints.get(resourceId);
+    if (!hint) return '';
+    const parts: string[] = [];
+    if (hint.memoryPct != null) parts.push(`mem ~${hint.memoryPct}%`);
+    if (hint.p95LatencyMs != null) parts.push(`p95 ${hint.p95LatencyMs}ms`);
+    return parts.join(', ');
+  }
+
+  private serviceLineExtras(serviceId: string): string {
+    if (!this.snapshot) return '';
+    const parts: string[] = [];
+    const deploy = this.snapshot.deployHints.get(serviceId);
+    if (deploy) parts.push(`deploy ${deploy.ageLabel} · ${deploy.status}`);
+    const pressure = this.pressureLabel(serviceId);
+    if (pressure) parts.push(pressure);
+    return parts.length ? ' │ ' + parts.join(' │ ') : '';
   }
 
   private formatServicesTable(includeUrl = true): string {
@@ -162,10 +303,10 @@ export class TopologyCache {
     const lines = this.snapshot.services.map(s => {
       const type = TYPE_LABELS[s.type] ?? s.type;
       const status = serviceStatusLabel(s);
-      const url = includeUrl && 'url' in s.serviceDetails && (s.serviceDetails as any).url
-        ? ` │ ${(s.serviceDetails as any).url}`
+      const url = includeUrl && 'url' in s.serviceDetails && (s.serviceDetails as { url?: string }).url
+        ? ` │ ${(s.serviceDetails as { url?: string }).url}`
         : '';
-      return `${s.id} │ ${s.name} │ ${type} │ ${status}${url}`;
+      return `${s.id} │ ${s.name} │ ${type} │ ${status}${url}${this.serviceLineExtras(s.id)}`;
     });
     return header + '\n' + lines.join('\n');
   }
@@ -184,13 +325,15 @@ export class TopologyCache {
     for (const s of this.snapshot.services) {
       const type = TYPE_LABELS[s.type] ?? s.type;
       const indicator = this.snapshot.errorIndicators.get(s.id)?.label ?? 'unknown';
-      lines.push(`${s.id} │ ${s.name} │ ${type} │ ${indicator}`);
+      lines.push(`${s.id} │ ${s.name} │ ${type} │ ${indicator}${this.serviceLineExtras(s.id)}`);
     }
     for (const d of this.snapshot.databases) {
-      lines.push(`${d.id} │ ${d.name} │ postgres │ clean`);
+      const pressure = this.pressureLabel(d.id);
+      lines.push(`${d.id} │ ${d.name} │ postgres │ ${d.status}${pressure ? ` │ ${pressure}` : ''}`);
     }
     for (const k of this.snapshot.keyValueStores) {
-      lines.push(`${k.id} │ ${k.name} │ redis │ clean`);
+      const pressure = this.pressureLabel(k.id);
+      lines.push(`${k.id} │ ${k.name} │ redis │ ${k.status}${pressure ? ` │ ${pressure}` : ''}`);
     }
     return header + '\n' + lines.join('\n');
   }
@@ -213,13 +356,15 @@ export class TopologyCache {
     for (const s of this.snapshot.services) {
       const type = TYPE_LABELS[s.type] ?? s.type;
       const status = serviceStatusLabel(s);
-      lines.push(`${s.id} │ ${s.name} │ ${type} │ ${status}`);
+      lines.push(`${s.id} │ ${s.name} │ ${type} │ ${status}${this.serviceLineExtras(s.id)}`);
     }
     for (const d of this.snapshot.databases) {
-      lines.push(`${d.id} │ ${d.name} │ postgres │ ${d.status}`);
+      const pressure = this.pressureLabel(d.id);
+      lines.push(`${d.id} │ ${d.name} │ postgres │ ${d.status}${pressure ? ` │ ${pressure}` : ''}`);
     }
     for (const k of this.snapshot.keyValueStores) {
-      lines.push(`${k.id} │ ${k.name} │ redis │ ${k.status}`);
+      const pressure = this.pressureLabel(k.id);
+      lines.push(`${k.id} │ ${k.name} │ redis │ ${k.status}${pressure ? ` │ ${pressure}` : ''}`);
     }
     if (lines.length === 0) {
       return 'No resources found. Deploy via render.yaml or the Render Dashboard to get started.';
@@ -240,5 +385,13 @@ const BASE_DESCRIPTIONS: Record<string, string> = {
   render_restart:
     'Restart a running service without triggering a full deploy (no rebuild).',
   render_run_command:
-    'Execute a one-off command in a service\'s environment (e.g., migrations, seed scripts).',
+    "Execute a one-off command in a service's environment (e.g., migrations, seed scripts).",
+  render_deploys:
+    'Recent deployment history for a service (timeline summary, regression flags within 30m of live).',
+  render_metrics:
+    'Performance metrics summary (peaks vs limits, trends). Pass raw: true for JSON series.',
+  render_diagnose:
+    'One-shot incident brief: logs + deploy timeline + metrics. Suggests next tools.',
+  render_configure:
+    'Update service platform config (not env vars). Tier 1: safe changes immediate. Tier 2: requires confirmed:true AND user approval in chat first.',
 };

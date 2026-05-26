@@ -1,16 +1,23 @@
 {
   "name": "render-mcp-server",
-  "version": "0.1.0",
-  "description": "MCP server with dynamic tool descriptions for Render infrastructure",
+  "version": "0.2.0",
+  "description": "Render MCP server with SRE workflows: live topology, incident diagnosis, metrics, deploy history",
   "type": "module",
   "bin": {
     "render-mcp-server": "dist/index.js"
   },
   "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": [
     "mcp",
@@ -20,7 +27,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
     "express": "^5.2.1",
     "render-api": "^1.2.2",

@@ -30,12 +30,23 @@ export async function handleEnvVars(
 
   if (action === 'set' && args.vars) {
     const entries = Object.entries(args.vars);
+    if (entries.length === 0) {
+      return {
+        content: [{ type: 'text', text: 'No variables provided to set.' }],
+        isError: true,
+      };
+    }
     await api.setEnvVars(args.serviceId, args.vars);
-    const lines = entries.map(([k]) => `  ${k} = ****`);
+    const lines = entries.map(([k, v]) => `  ${k} (length=${v.length})`);
     return {
       content: [{
         type: 'text',
-        text: `Set ${entries.length} env var${entries.length === 1 ? '' : 's'} on ${name} (${args.serviceId}):\n${lines.join('\n')}\n\nNote: Changes take effect on next deploy. Run render_deploy to apply now.`,
+        text: [
+          `Set ${entries.length} env var${entries.length === 1 ? '' : 's'} on ${name} (${args.serviceId}):`,
+          ...lines,
+          '',
+          'Note: Changes take effect on next deploy. Run render_deploy to apply now.',
+        ].join('\n'),
       }],
     };
   }

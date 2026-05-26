@@ -1,125 +1,72 @@
 # render-mcp-server
 
-An MCP server that gives AI agents a live view of your Render infrastructure through **dynamic tool descriptions** — the agent sees your services, their health, URLs, and IDs directly in its tool listing, with no discovery calls needed.
+MCP server for operating Render infrastructure from Cursor and other MCP clients.
 
-## Deploy to Render
+## Deploy on Render
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/YOUR_ORG/render-mcp-server)
+1. Create a new Blueprint from this repo's `render.yaml`.
+2. Set `RENDER_API_KEY` in the service's environment (Dashboard → Environment).
+3. Optionally set `MCP_AUTH_TOKEN` for a separate client auth token (defaults to `RENDER_API_KEY` if unset).
+4. After deploy, note the service URL (e.g. `https://render-mcp-server.onrender.com`).
 
-1. Click the button above (or use the Blueprint below)
-2. Enter your [Render API key](https://render.com/docs/api#creating-an-api-key) when prompted
-3. Once deployed, copy your service URL (e.g. `https://render-mcp-server-xxxx.onrender.com`)
-4. Add to your agent's MCP config:
+The service listens on `PORT` and exposes MCP at `/mcp` and health at `/health`.
+
+## Connect
+
+### Hosted (HTTP)
+
+Use your Render service URL with the auth token as the `Authorization` bearer:
 
 ```json
 {
   "mcpServers": {
     "render": {
-      "url": "https://render-mcp-server-xxxx.onrender.com/mcp",
+      "url": "https://YOUR-SERVICE.onrender.com/mcp",
       "headers": {
-        "Authorization": "Bearer rnd_xxxxx"
+        "Authorization": "Bearer <MCP_AUTH_TOKEN or RENDER_API_KEY>"
       }
     }
   }
 }
 ```
 
-That's it — your agent now has full infrastructure awareness.
+### Local (stdio)
 
-## Quick Start (Local)
-
-### stdio mode
+Clone the repo, set your key, and point Cursor at the project:
 
 ```bash
-RENDER_API_KEY=rnd_xxxxx npx render-mcp-server
-```
-
-### Cursor
-
-Add to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "render": {
-      "command": "npx",
-      "args": ["render-mcp-server"],
-      "env": {
-        "RENDER_API_KEY": "rnd_xxxxx"
-      }
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "render": {
-      "command": "npx",
-      "args": ["render-mcp-server"],
-      "env": {
-        "RENDER_API_KEY": "rnd_xxxxx"
-      }
-    }
-  }
-}
-```
-
-## Tools
-
-| Tool | Description |
-|------|-------------|
-| `render_deploy` | Trigger a deploy on any service |
-| `render_logs` | Retrieve processed log summaries (deduplicated errors, patterns, correlations) or raw lines |
-| `render_env_vars` | List or set environment variables |
-| `render_inspect` | Get detailed resource info (plan, region, deploys, crash details, connection strings) |
-| `render_restart` | Restart a service without a full deploy |
-| `render_run_command` | Execute a one-off command in a service's environment |
-
-Every tool description embeds a live topology table showing your services, databases, and key-value stores with their current status. The agent knows what's running before making any tool call.
-
-## How It Works
-
-```
-Agent calls tools/list
-       │
-       ▼
-┌──────────────────────────┐
-│  TopologyCache           │
-│  • Fetches services,     │
-│    databases, KV stores  │
-│  • Counts errors per svc │
-│  • Builds descriptions   │
-└──────────┬───────────────┘
-           │
-           ▼
-Tool descriptions include:
-  srv-cx7q │ my-api    │ web    │ deployed │ https://my-api.onrender.com
-  srv-ab3p │ my-worker │ worker │ deployed
-  dpg-kf8n │ my-db     │ postgres│ available
-```
-
-When infrastructure state changes, the cache refreshes (30s TTL) and sends `notifications/tools/list_changed` so the agent's worldview stays current.
-
-## Configuration
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `RENDER_API_KEY` | Yes | — | Your Render API key |
-| `PORT` | No | stdio | Set to enable HTTP mode |
-| `RENDER_CACHE_TTL_MS` | No | 30000 | Cache staleness threshold (ms) |
-| `RENDER_LOG_DEFAULT_WINDOW_MIN` | No | 10 | Default log summary window (minutes) |
-
-## Development
-
-```bash
+export RENDER_API_KEY=rnd_xxxxx
 npm install
-npm run dev    # Run with tsx (hot reload)
-npm run build  # Compile TypeScript
-npm start      # Run compiled JS
+npm run dev
 ```
+
+```json
+{
+  "mcpServers": {
+    "render": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "/path/to/render-agent",
+      "env": {
+        "RENDER_API_KEY": "rnd_xxxxx"
+      }
+    }
+  }
+}
+```
+
+Without `PORT`, the server uses stdio. With `PORT` set, it serves HTTP and requires the `Authorization: Bearer` header on `/mcp`.
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `RENDER_API_KEY` | Yes | Render API key for accessing the Render platform |
+| `MCP_AUTH_TOKEN` | No | Separate token for authenticating MCP clients (defaults to `RENDER_API_KEY`) |
+| `PORT` | No | Set to enable HTTP mode (otherwise uses stdio) |
+| `RENDER_CACHE_TTL_MS` | No | Topology cache TTL in ms (default: 30000) |
+| `RENDER_LOG_DEFAULT_WINDOW_MIN` | No | Default log window in minutes (default: 10) |
+
+## Requirements
+
+- Node.js >= 20.0.0
