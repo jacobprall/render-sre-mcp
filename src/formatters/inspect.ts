@@ -1,5 +1,4 @@
-import type { Service } from 'render-api';
-import type { KeyValue, Postgres } from 'render-api';
+import type { KeyValue, Postgres, Service } from '../types/render-api.js';
 
 interface ServiceDetails {
   plan?: string;

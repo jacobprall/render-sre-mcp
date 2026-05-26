@@ -1,9 +1,9 @@
 export {
-  RenderNetworkError,
-  RenderTimeoutError,
   RenderAuthError,
+  RenderNetworkError,
   RenderRateLimitError,
-} from 'render-api';
+  RenderTimeoutError,
+} from './api/errors.js';
 export { fetchServices, fetchPostgres, fetchKeyValue } from './api/lists.js';
 export { fetchServiceLogs, type LogEntry } from './api/logs.js';
 export { fetchMetricsBundle } from './api/metrics.js';

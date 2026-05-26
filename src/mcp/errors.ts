@@ -1,9 +1,9 @@
 import {
   RenderAuthError,
   RenderNetworkError,
-  RenderTimeoutError,
   RenderRateLimitError,
-} from '../render-api.js';
+  RenderTimeoutError,
+} from '../api/errors.js';
 import type { ToolCallResult } from '../types.js';
 
 export function errorResult(message: string): ToolCallResult {

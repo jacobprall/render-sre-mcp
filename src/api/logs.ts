@@ -1,11 +1,7 @@
-import { getApiKey, getOwnerId } from './client.js';
+import type { LogEntry } from '../types/render-api.js';
+import { getOwnerId, renderGet } from './http.js';
 
-export interface LogEntry {
-  id: string;
-  message: string;
-  timestamp: string;
-  labels: Array<{ name: string; value: string }>;
-}
+export type { LogEntry };
 
 export async function fetchServiceLogs(
   resourceId: string,
@@ -17,25 +13,17 @@ export async function fetchServiceLogs(
     direction?: 'forward' | 'backward';
   }
 ): Promise<LogEntry[]> {
-  const key = getApiKey();
   const ownerId = await getOwnerId();
-  const params = new URLSearchParams();
-  params.set('ownerId', ownerId);
-  params.set('resource', resourceId);
-  params.set('limit', String(options?.limit ?? 500));
-  params.set('direction', options?.direction ?? 'backward');
-  if (options?.startTime) params.set('startTime', options.startTime);
-  if (options?.endTime) params.set('endTime', options.endTime);
-  if (options?.severity) params.set('severity', options.severity);
+  const query: Record<string, string> = {
+    ownerId,
+    resource: resourceId,
+    limit: String(options?.limit ?? 500),
+    direction: options?.direction ?? 'backward',
+  };
+  if (options?.startTime) query.startTime = options.startTime;
+  if (options?.endTime) query.endTime = options.endTime;
+  if (options?.severity) query.severity = options.severity;
 
-  const resp = await fetch(`https://api.render.com/v1/logs?${params}`, {
-    headers: { Authorization: `Bearer ${key}` },
-  });
-  if (!resp.ok) {
-    const body = await resp.text();
-    const truncated = body.length > 200 ? body.slice(0, 200) + '…' : body;
-    throw new Error(`Logs API error (${resp.status}): ${truncated}`);
-  }
-  const data = await resp.json() as { logs: LogEntry[] };
+  const data = await renderGet<{ logs: LogEntry[] }>('/logs', query);
   return data.logs ?? [];
 }

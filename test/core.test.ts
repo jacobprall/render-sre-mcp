@@ -5,7 +5,7 @@ import {
   RenderNetworkError,
   RenderRateLimitError,
   RenderTimeoutError,
-} from 'render-api';
+} from '../src/api/errors.js';
 import { validateConfigureRequest } from '../src/configure-allowlist.js';
 import { DeployTimelineBuilder } from '../src/deploy-timeline.js';
 import { describeTool, BASE_DESCRIPTIONS } from '../src/domain/topology/descriptions.js';
@@ -302,7 +302,7 @@ describe('topology descriptions and tables', () => {
     const desc = describeTool('render_logs', { snapshot, lastRefreshOk: true });
     assert.match(desc, /Resources:/);
     assert.match(desc, /srv-abc123/);
-    assert.match(desc, /2 errors in last 10m/);
+    assert.match(desc, /deployed/);
     assert.match(desc, /Infrastructure state as of \d{2}:\d{2}:\d{2} UTC/);
   });
 
@@ -342,11 +342,19 @@ describe('topology descriptions and tables', () => {
 });
 
 describe('hot resources', () => {
-  it('marks services with errors as hot', () => {
-    const snapshot = makeSnapshot();
-    const tracker = new HotResourceTracker();
-    const hot = computeHotServiceIds(snapshot, tracker);
-    assert.ok(hot.has('srv-abc123'));
+  it('marks suspended services as hot', () => {
+    const snapshot = makeSnapshot({
+      services: [
+        {
+          id: 'srv-susp',
+          name: 'paused',
+          type: 'web_service',
+          suspended: 'suspended',
+        } as never,
+      ],
+    });
+    const hot = computeHotServiceIds(snapshot, new HotResourceTracker());
+    assert.ok(hot.has('srv-susp'));
   });
 
   it('tracks recently acted-on resources', () => {
@@ -516,6 +524,28 @@ describe('tool runner', () => {
     const result = await handler({ serviceId: 'srv-abc123' });
     assert.equal(result.isError, true);
     assert.match(result.content[0]!.text, /boom/);
+  });
+});
+
+describe('keyValue normalize', () => {
+  it('fills missing fields omitted by the API', async () => {
+    const { normalizeKeyValue } = await import('../src/api/keyValue.js');
+    const kv = normalizeKeyValue({
+      id: 'red-abc',
+      name: 'cache',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-06-01T00:00:00Z',
+      region: 'oregon',
+      plan: 'starter',
+      status: 'available',
+      owner: { id: 'own-1', name: 'team' },
+      ipAllowList: null,
+    });
+    assert.equal(kv.maxmemoryPolicy, 'noeviction');
+    assert.equal(kv.suspended, 'not_suspended');
+    assert.deepEqual(kv.suspenders, []);
+    assert.equal(kv.ipAllowList, undefined);
+    assert.equal(kv.dashboardUrl, '');
   });
 });
 

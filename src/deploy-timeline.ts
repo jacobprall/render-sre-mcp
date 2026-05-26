@@ -1,4 +1,4 @@
-import type { Deploy } from 'render-api';
+import type { Deploy } from './types/render-api.js';
 import type { DeployTimeline, DeployTimelineEntry } from './types.js';
 
 const REGRESSION_WINDOW_MS = 30 * 60 * 1000;

@@ -1,4 +1,4 @@
-import type { Service, Postgres, KeyValue } from 'render-api';
+import type { Service, Postgres, KeyValue } from './render-api.js';
 
 export interface DeployHint {
   ageLabel: string;

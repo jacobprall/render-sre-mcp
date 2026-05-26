@@ -3,11 +3,7 @@ import type { HotResourceTracker } from '../../hot-resources.js';
 import * as api from '../../render-api.js';
 import type { TopologySnapshot } from '../../types/topology.js';
 import { describeTool } from './descriptions.js';
-import {
-  enrichErrorIndicatorsAndEnvCounts,
-  enrichHotHints,
-  getLogWindowMinutes,
-} from './enrich.js';
+import { enrichDeployHints } from './enrich.js';
 
 export class TopologyCache {
   snapshot: TopologySnapshot | null = null;
@@ -73,29 +69,18 @@ export class TopologyCache {
       return false;
     }
 
-    const svcList = services ?? this.snapshot?.services ?? [];
-    const dbList = databases ?? this.snapshot?.databases ?? [];
-    const kvList = keyValueStores ?? this.snapshot?.keyValueStores ?? [];
-
-    const { envVarCounts, errorIndicators } = await enrichErrorIndicatorsAndEnvCounts(
-      svcList,
-      getLogWindowMinutes()
-    );
-
     const partialSnapshot: TopologySnapshot = {
-      services: svcList,
-      databases: dbList,
-      keyValueStores: kvList,
+      services: services ?? this.snapshot?.services ?? [],
+      databases: databases ?? this.snapshot?.databases ?? [],
+      keyValueStores: keyValueStores ?? this.snapshot?.keyValueStores ?? [],
       fetchedAt: Date.now(),
-      envVarCounts,
-      errorIndicators,
+      envVarCounts: new Map(),
+      errorIndicators: new Map(),
       deployHints: new Map(),
       pressureHints: new Map(),
     };
 
-    const { deployHints, pressureHints } = await enrichHotHints(partialSnapshot, this.hotTracker);
-    partialSnapshot.deployHints = deployHints;
-    partialSnapshot.pressureHints = pressureHints;
+    partialSnapshot.deployHints = await enrichDeployHints(partialSnapshot, this.hotTracker);
 
     this.snapshot = partialSnapshot;
     this.fetchedAt = Date.now();
@@ -117,9 +102,6 @@ export class TopologyCache {
     ];
     for (const [id, h] of this.snapshot.deployHints) {
       ids.push(`deploy:${id}:${h.status}:${h.ageLabel}`);
-    }
-    for (const [id, p] of this.snapshot.pressureHints) {
-      ids.push(`pressure:${id}:${p.memoryPct ?? ''}:${p.p95LatencyMs ?? ''}`);
     }
     return ids.sort().join('|');
   }

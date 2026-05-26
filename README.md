@@ -83,4 +83,6 @@ Without `PORT`, the server runs in stdio mode. With `PORT` set, it serves HTTP w
 
 ## Notes
 
+Platform API access is implemented in `src/api/` as a thin REST client against `https://api.render.com/v1` (no third-party Render npm client).
+
 Live topology in tool descriptions relies on the MCP `tools/listChanged` notification and dynamic tool description updates. This is an experimental part of the MCP specification—client support varies. Cursor supports it; other clients may display stale descriptions until they implement the notification handler.

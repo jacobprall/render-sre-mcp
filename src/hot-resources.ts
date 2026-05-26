@@ -49,8 +49,6 @@ export function computeHotServiceIds(
   const hot = new Set<string>();
   for (const svc of snapshot.services) {
     if (svc.suspended === 'suspended') hot.add(svc.id);
-    const errors = snapshot.errorIndicators.get(svc.id);
-    if (errors && errors.count > 0) hot.add(svc.id);
     if (tracker.isActedOn(svc.id)) hot.add(svc.id);
   }
   return hot;

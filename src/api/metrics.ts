@@ -1,26 +1,34 @@
-import { getClient } from './client.js';
+import type { MetricPoint, MetricResponse } from '../types/render-api.js';
+import { renderGet } from './http.js';
 
-export interface MetricPoint {
-  timestamp: string;
-  value: number;
+export type { MetricPoint };
+
+interface MetricsQuery {
+  resourceIds: string[];
+  startTime?: string;
+  endTime?: string;
+}
+
+function metricsQuery(params: MetricsQuery): Record<string, string> {
+  const query: Record<string, string> = {
+    resourceIds: params.resourceIds.join(','),
+  };
+  if (params.startTime) query.startTime = params.startTime;
+  if (params.endTime) query.endTime = params.endTime;
+  return query;
 }
 
 async function fetchMetricSeries(
+  path: string,
   resourceId: string,
-  fetcher: (params: {
-    resourceIds: string[];
-    startTime?: string;
-    endTime?: string;
-  }) => Promise<{ series: Array<{ values: MetricPoint[] }> }>,
   window: { startTime: string; endTime: string }
 ): Promise<MetricPoint[]> {
   try {
-    const c = getClient();
-    const resp = await fetcher.call(c.metrics, {
+    const resp = await renderGet<MetricResponse>(path, metricsQuery({
       resourceIds: [resourceId],
       startTime: window.startTime,
       endTime: window.endTime,
-    });
+    }));
     const points: MetricPoint[] = [];
     for (const s of resp.series ?? []) {
       for (const v of s.values ?? []) points.push(v);
@@ -35,7 +43,6 @@ export async function fetchMetricsBundle(
   resourceId: string,
   window: { start: Date; end: Date }
 ) {
-  const c = getClient();
   const range = {
     startTime: window.start.toISOString(),
     endTime: window.end.toISOString(),
@@ -44,23 +51,23 @@ export async function fetchMetricsBundle(
   const isKv = resourceId.startsWith('red-');
 
   const [memory, memoryLimit, cpu, activeConnections] = await Promise.all([
-    fetchMetricSeries(resourceId, c.metrics.memory.bind(c.metrics), range),
-    fetchMetricSeries(resourceId, c.metrics.memoryLimit.bind(c.metrics), range),
+    fetchMetricSeries('/metrics/memory', resourceId, range),
+    fetchMetricSeries('/metrics/memory-limit', resourceId, range),
     isPostgres || isKv
       ? Promise.resolve([])
-      : fetchMetricSeries(resourceId, c.metrics.cpu.bind(c.metrics), range),
+      : fetchMetricSeries('/metrics/cpu', resourceId, range),
     isPostgres || isKv
-      ? fetchMetricSeries(resourceId, c.metrics.activeConnections.bind(c.metrics), range)
+      ? fetchMetricSeries('/metrics/active-connections', resourceId, range)
       : Promise.resolve([]),
   ]);
 
   let httpLatencyP95Peak: number | undefined;
   if (!isPostgres && !isKv) {
     try {
-      const latency = await c.metrics.httpLatency({
+      const latency = await renderGet<MetricResponse>('/metrics/http-latency', metricsQuery({
         resourceIds: [resourceId],
         ...range,
-      });
+      }));
       const vals = latency.series?.flatMap(s => s.values.map(v => v.value)) ?? [];
       if (vals.length) httpLatencyP95Peak = Math.max(...vals);
     } catch { /* optional */ }
