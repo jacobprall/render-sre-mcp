@@ -31,7 +31,7 @@ export async function handleDiagnose(
       limit: 500,
     }).catch(() => []),
     getResourceType(args.resourceId) === 'service'
-      ? api.fetchDeployHistory(args.resourceId, 5).catch(() => [])
+      ? api.fetchDeploys(args.resourceId, 5).catch(() => [])
       : Promise.resolve([]),
     api.fetchMetricsBundle(args.resourceId, { start, end }).catch(() => null),
   ]);

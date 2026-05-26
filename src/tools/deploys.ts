@@ -16,7 +16,7 @@ export async function handleDeploys(
   const windowStart = new Date(Date.now() - config.logDefaultWindowMin * 60 * 1000);
   const errorCount = snapshot.errorIndicators.get(args.serviceId)?.count ?? 0;
 
-  const deploys = await api.fetchDeployHistory(args.serviceId, limit);
+  const deploys = await api.fetchDeploys(args.serviceId, limit);
   const timeline = builder.build(args.serviceId, name, deploys, {
     errorCountInWindow: errorCount,
     windowStart,

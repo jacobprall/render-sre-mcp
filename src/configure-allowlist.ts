@@ -22,7 +22,7 @@ function planRank(plan: string): number {
   return i >= 0 ? i : PLAN_ORDER.length;
 }
 
-export function classifyConfigureChanges(
+function classifyConfigureChanges(
   patch: ConfigurePatch,
   currentPlan?: string
 ): ClassifiedChange[] {
