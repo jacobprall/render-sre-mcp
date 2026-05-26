@@ -158,23 +158,23 @@ export class IncidentBriefBuilder {
 
     if (logs) {
       actions.push({
-        tool: 'render_logs',
+        tool: 'render_observe',
         description: 'Drill into raw logs for stack traces',
-        args: { resourceId, raw: true, severity: 'error' },
+        args: { resourceId, mode: 'logs', raw: true, severity: 'error' },
       });
     }
 
     if (metrics?.signals.some(s => s.severity === 'critical' || s.severity === 'warning')) {
       actions.push({
-        tool: 'render_metrics',
+        tool: 'render_observe',
         description: 'Full metrics drill-down',
-        args: { resourceId },
+        args: { resourceId, mode: 'metrics' },
       });
       if (getResourceType(resourceId) === 'service') {
         actions.push({
-          tool: 'render_configure',
+          tool: 'render_service',
           description: 'Consider plan scale-up if memory/CPU constrained',
-          args: { serviceId: resourceId },
+          args: { serviceId: resourceId, action: 'configure' },
           requiresConfirmation: true,
         });
       }
@@ -185,7 +185,7 @@ export class IncidentBriefBuilder {
       const pg = snapshot.databases[0];
       if (pg) {
         actions.push({
-          tool: 'render_inspect',
+          tool: 'render_workspace',
           description: `Check Postgres status for ${pg.name}`,
           args: { resourceId: pg.id },
         });
@@ -193,7 +193,7 @@ export class IncidentBriefBuilder {
     }
 
     actions.push({
-      tool: 'render_inspect',
+      tool: 'render_workspace',
       description: 'Full resource details',
       args: { resourceId },
     });

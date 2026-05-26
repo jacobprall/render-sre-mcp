@@ -1,15 +1,18 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { getHotResourceTracker } from '../hot-resources.js';
 import { TopologyCache } from '../domain/topology/cache.js';
+import { SERVER_INSTRUCTIONS } from './instructions.js';
+import { registerWorkspaceResource } from './resources.js';
 import { registerTools } from './tool-registry.js';
 
-const TOOL_REFRESH_DEBOUNCE_MS = 5_000;
+const RESOURCE_REFRESH_DEBOUNCE_MS = 5_000;
 
 export interface CreateServerResult {
   mcpServer: McpServer;
   topology: TopologyCache;
+  /** @deprecated Tool descriptions are static; refreshes workspace resource only. */
   updateAllDescriptions: () => void;
-  notifyDescriptionsChanged: () => Promise<void>;
+  notifyWorkspaceChanged: () => Promise<void>;
 }
 
 export async function createServer(topology?: TopologyCache): Promise<CreateServerResult> {
@@ -18,42 +21,42 @@ export async function createServer(topology?: TopologyCache): Promise<CreateServ
   await topo.ensureFresh();
 
   const mcpServer = new McpServer(
-    { name: 'render-mcp-server', version: '0.2.0' },
-    { capabilities: { tools: { listChanged: true } } }
+    { name: 'render-mcp-server', version: '0.3.0' },
+    {
+      instructions: SERVER_INSTRUCTIONS,
+      capabilities: {
+        tools: { listChanged: true },
+        resources: { listChanged: true },
+      },
+    }
   );
 
-  let lastToolRefreshNotification = 0;
+  registerWorkspaceResource(mcpServer, topo);
 
-  const registeredTools = registerTools(mcpServer, topo, hotTracker, () => {
-    void refreshAndNotify();
+  let lastResourceNotification = 0;
+
+  registerTools(mcpServer, topo, hotTracker, () => {
+    void refreshWorkspace();
   });
 
-  function updateAllDescriptions() {
-    for (const [name, reg] of registeredTools) {
-      reg.update({ description: topo.describe(name) });
-    }
-  }
-
-  async function refreshAndNotify() {
+  async function refreshWorkspace() {
     try {
       const changed = await topo.refresh();
-      if (changed && Date.now() - lastToolRefreshNotification > TOOL_REFRESH_DEBOUNCE_MS) {
-        lastToolRefreshNotification = Date.now();
-        updateAllDescriptions();
-        await mcpServer.server.sendToolListChanged();
+      if (changed && Date.now() - lastResourceNotification > RESOURCE_REFRESH_DEBOUNCE_MS) {
+        lastResourceNotification = Date.now();
+        mcpServer.sendResourceListChanged();
       }
     } catch { /* best effort */ }
   }
 
-  async function notifyDescriptionsChanged() {
-    updateAllDescriptions();
-    await mcpServer.server.sendToolListChanged();
+  async function notifyWorkspaceChanged() {
+    mcpServer.sendResourceListChanged();
   }
 
   return {
     mcpServer,
     topology: topo,
-    updateAllDescriptions,
-    notifyDescriptionsChanged,
+    updateAllDescriptions: () => {},
+    notifyWorkspaceChanged,
   };
 }

@@ -8,7 +8,8 @@ import {
 } from '../src/api/errors.js';
 import { validateConfigureRequest } from '../src/configure-allowlist.js';
 import { DeployTimelineBuilder } from '../src/deploy-timeline.js';
-import { describeTool, BASE_DESCRIPTIONS } from '../src/domain/topology/descriptions.js';
+import { getToolDescription, TOOL_DESCRIPTIONS } from '../src/domain/topology/descriptions.js';
+import { formatWorkspaceInventory } from '../src/domain/topology/workspace-document.js';
 import {
   formatAllResourcesTable,
   formatLogsTable,
@@ -25,16 +26,11 @@ import { formatAge } from '../src/lib/time.js';
 import { LogProcessor } from '../src/log-processor.js';
 import { handleError, errorResult } from '../src/mcp/errors.js';
 import {
-  configureSchema,
   deploySchema,
-  deploysSchema,
   diagnoseSchema,
-  envVarsSchema,
-  inspectSchema,
-  logsSchema,
-  metricsSchema,
-  restartSchema,
-  runCommandSchema,
+  observeSchema,
+  serviceSchema,
+  workspaceSchema,
 } from '../src/mcp/schemas.js';
 import { TOOL_DEFINITIONS } from '../src/mcp/tool-registry.js';
 import { wrapToolHandler } from '../src/mcp/tool-runner.js';
@@ -276,7 +272,7 @@ describe('IncidentBriefBuilder', () => {
     assert.equal(brief.confidence, 'medium');
     assert.match(brief.hypothesis, /deploy dep-1/);
     assert.ok(brief.suggestedActions.some(a => a.tool === 'render_deploy'));
-    assert.ok(brief.suggestedActions.some(a => a.tool === 'render_inspect'));
+    assert.ok(brief.suggestedActions.some(a => a.tool === 'render_workspace'));
   });
 
   it('format output includes risks section', () => {
@@ -298,22 +294,22 @@ describe('IncidentBriefBuilder', () => {
 describe('topology descriptions and tables', () => {
   const snapshot = makeSnapshot();
 
-  it('includes live resource tables when snapshot is present', () => {
-    const desc = describeTool('render_logs', { snapshot, lastRefreshOk: true });
-    assert.match(desc, /Resources:/);
-    assert.match(desc, /srv-abc123/);
-    assert.match(desc, /deployed/);
-    assert.match(desc, /Infrastructure state as of \d{2}:\d{2}:\d{2} UTC/);
+  it('uses static tool descriptions pointing at workspace resource', () => {
+    const deploy = getToolDescription('render_deploy');
+    assert.doesNotMatch(deploy, /Services:/);
+    assert.match(deploy, /render:\/\/workspace/);
+
+    const observe = getToolDescription('render_observe');
+    assert.match(observe, /resourceId is required/);
+    assert.match(observe, /bundle/);
   });
 
-  it('shows loading message when snapshot missing but refresh ok', () => {
-    const desc = describeTool('render_deploy', { snapshot: null, lastRefreshOk: true });
-    assert.match(desc, /Loading infrastructure state/);
-  });
-
-  it('shows API unreachable message when refresh failed', () => {
-    const desc = describeTool('render_deploy', { snapshot: null, lastRefreshOk: false });
-    assert.match(desc, /Unable to reach Render API/);
+  it('formats workspace inventory document from snapshot', () => {
+    const doc = formatWorkspaceInventory(snapshot);
+    assert.match(doc, /Resources:/);
+    assert.match(doc, /srv-abc123/);
+    assert.match(doc, /dpg-db1/);
+    assert.match(doc, /Infrastructure state as of \d{2}:\d{2}:\d{2} UTC/);
   });
 
   it('formatServicesTable omits URLs when includeUrl is false', () => {
@@ -336,7 +332,7 @@ describe('topology descriptions and tables', () => {
 
   it('registers a description for every MCP tool', () => {
     for (const def of TOOL_DEFINITIONS) {
-      assert.ok(BASE_DESCRIPTIONS[def.name], `missing base description for ${def.name}`);
+      assert.ok(TOOL_DESCRIPTIONS[def.name], `missing description for ${def.name}`);
     }
   });
 });
@@ -385,33 +381,33 @@ describe('MCP schemas', () => {
     assert.equal(parsed.clearCache, false);
   });
 
-  it('parses logs tool args with defaults', () => {
-    const parsed = logsSchema.parse({ resourceId: 'srv-1' });
+  it('parses observe tool args with defaults', () => {
+    const parsed = observeSchema.parse({ resourceId: 'srv-1' });
+    assert.equal(parsed.mode, 'bundle');
     assert.equal(parsed.raw, false);
   });
 
-  it('parses env vars set action', () => {
-    const parsed = envVarsSchema.parse({
+  it('parses service env_vars set action', () => {
+    const parsed = serviceSchema.parse({
       serviceId: 'srv-1',
-      action: 'set',
+      action: 'env_vars',
+      envAction: 'set',
       vars: { NODE_ENV: 'production' },
     });
-    assert.equal(parsed.action, 'set');
+    assert.equal(parsed.action, 'env_vars');
     assert.equal(parsed.vars?.NODE_ENV, 'production');
   });
 
-  it('registers exactly ten tools with unique names', () => {
-    assert.equal(TOOL_DEFINITIONS.length, 10);
+  it('registers exactly five tools with unique names', () => {
+    assert.equal(TOOL_DEFINITIONS.length, 5);
     const names = TOOL_DEFINITIONS.map(d => d.name);
     assert.equal(new Set(names).size, names.length);
     for (const schema of [
-      inspectSchema,
-      restartSchema,
-      runCommandSchema,
-      deploysSchema,
-      metricsSchema,
+      workspaceSchema,
+      observeSchema,
       diagnoseSchema,
-      configureSchema,
+      deploySchema,
+      serviceSchema,
     ]) {
       assert.ok(schema);
     }

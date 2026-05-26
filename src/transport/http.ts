@@ -35,14 +35,14 @@ export async function startHttp(port: number): Promise<void> {
 
   const hotTracker = getHotResourceTracker();
   const topology = new TopologyCache(hotTracker);
-  const { mcpServer, notifyDescriptionsChanged } = await createServer(topology);
+  const { mcpServer, notifyWorkspaceChanged } = await createServer(topology);
 
   if (config.webhookSecret) {
     const webhookHandler = createWebhookHandler({
       secret: config.webhookSecret,
       topology,
       notifyDescriptionsChanged: () => {
-        void notifyDescriptionsChanged();
+        void notifyWorkspaceChanged();
       },
       debounceMs: config.webhookNotifyDebounceMs,
     });

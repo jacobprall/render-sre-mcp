@@ -2,28 +2,19 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import type { HotResourceTracker } from '../hot-resources.js';
 import type { TopologyCache } from '../domain/topology/cache.js';
+import { getToolDescription } from '../domain/topology/descriptions.js';
 import type { ToolCallResult, TopologySnapshot } from '../types.js';
-import { handleConfigure } from '../tools/configure.js';
 import { handleDeploy } from '../tools/deploy.js';
-import { handleDeploys } from '../tools/deploys.js';
 import { handleDiagnose } from '../tools/diagnose.js';
-import { handleEnvVars } from '../tools/env-vars.js';
+import { handleObserve } from '../tools/observe.js';
 import { handleInspect } from '../tools/inspect.js';
-import { handleLogs } from '../tools/logs.js';
-import { handleMetrics } from '../tools/metrics.js';
-import { handleRestart } from '../tools/restart.js';
-import { handleRunCommand } from '../tools/run-command.js';
+import { handleService } from '../tools/service.js';
 import {
-  configureSchema,
   deploySchema,
-  deploysSchema,
   diagnoseSchema,
-  envVarsSchema,
-  inspectSchema,
-  logsSchema,
-  metricsSchema,
-  restartSchema,
-  runCommandSchema,
+  observeSchema,
+  serviceSchema,
+  workspaceSchema,
 } from './schemas.js';
 import { wrapToolHandler, type ToolRunnerContext } from './tool-runner.js';
 
@@ -45,61 +36,16 @@ function defineTool<TSchema extends ZodObjectSchema>(def: ToolDefinition<TSchema
 
 export const TOOL_DEFINITIONS = [
   defineTool({
-    name: 'render_deploy',
-    inputSchema: deploySchema,
-    resourceIdField: 'serviceId',
-    refreshOnSuccess: true,
-    handler: (args, snapshot) => handleDeploy(args, snapshot),
-  }),
-  defineTool({
-    name: 'render_logs',
-    inputSchema: logsSchema,
-    resourceIdField: 'resourceId',
-    handler: (args, snapshot) => handleLogs(args, snapshot),
-  }),
-  defineTool({
-    name: 'render_env_vars',
-    inputSchema: envVarsSchema,
-    resourceIdField: 'serviceId',
-    shouldRefresh: (args) => args.action === 'set',
-    mapArgs: (args) => ({
-      serviceId: args.serviceId,
-      action: args.action,
-      reveal: args.reveal,
-      vars: args.vars,
-    }),
-    handler: (args, snapshot) => handleEnvVars(args, snapshot),
-  }),
-  defineTool({
-    name: 'render_inspect',
-    inputSchema: inspectSchema,
+    name: 'render_workspace',
+    inputSchema: workspaceSchema,
     resourceIdField: 'resourceId',
     handler: (args, snapshot) => handleInspect(args, snapshot),
   }),
   defineTool({
-    name: 'render_restart',
-    inputSchema: restartSchema,
-    resourceIdField: 'serviceId',
-    refreshOnSuccess: true,
-    handler: (args, snapshot) => handleRestart(args, snapshot),
-  }),
-  defineTool({
-    name: 'render_run_command',
-    inputSchema: runCommandSchema,
-    resourceIdField: 'serviceId',
-    handler: (args, snapshot) => handleRunCommand(args, snapshot),
-  }),
-  defineTool({
-    name: 'render_deploys',
-    inputSchema: deploysSchema,
-    resourceIdField: 'serviceId',
-    handler: (args, snapshot) => handleDeploys(args, snapshot),
-  }),
-  defineTool({
-    name: 'render_metrics',
-    inputSchema: metricsSchema,
+    name: 'render_observe',
+    inputSchema: observeSchema,
     resourceIdField: 'resourceId',
-    handler: (args, snapshot) => handleMetrics(args, snapshot),
+    handler: (args, snapshot) => handleObserve(args, snapshot),
   }),
   defineTool({
     name: 'render_diagnose',
@@ -108,11 +54,19 @@ export const TOOL_DEFINITIONS = [
     handler: (args, snapshot) => handleDiagnose(args, snapshot),
   }),
   defineTool({
-    name: 'render_configure',
-    inputSchema: configureSchema,
+    name: 'render_deploy',
+    inputSchema: deploySchema,
     resourceIdField: 'serviceId',
     refreshOnSuccess: true,
-    handler: (args, snapshot) => handleConfigure(args, snapshot),
+    handler: (args, snapshot) => handleDeploy(args, snapshot),
+  }),
+  defineTool({
+    name: 'render_service',
+    inputSchema: serviceSchema,
+    resourceIdField: 'serviceId',
+    refreshOnSuccess: true,
+    shouldRefresh: (args) => args.action === 'env_vars' && args.envAction === 'set',
+    handler: (args, snapshot) => handleService(args, snapshot),
   }),
 ];
 
@@ -149,7 +103,7 @@ export function registerTools(
       mcpServer.registerTool(
         def.name,
         {
-          description: topo.describe(def.name),
+          description: getToolDescription(def.name),
           inputSchema: def.inputSchema,
         },
         wrapped

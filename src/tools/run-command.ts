@@ -36,7 +36,7 @@ export async function handleRunCommand(
   if (timedOut) {
     lines.push('');
     lines.push('⚠ Agent polling timed out after 120s. The job is still running on Render.');
-    lines.push('Check status in the Render Dashboard or call render_inspect later.');
+    lines.push('Check status in the Render Dashboard or call render_workspace later.');
   }
 
   return { content: [{ type: 'text', text: lines.join('\n') }] };

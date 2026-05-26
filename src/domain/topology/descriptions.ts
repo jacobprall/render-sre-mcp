@@ -1,74 +1,27 @@
-import type { TopologySnapshot } from '../../types/topology.js';
-import {
-  formatAllResourcesTable,
-  formatEnvVarsTable,
-  formatLogsTable,
-  formatServicesTable,
-} from './formatTables.js';
+import { WORKSPACE_RESOURCE_URI } from './workspace-document.js';
 
-export const BASE_DESCRIPTIONS: Record<string, string> = {
-  render_deploy: 'Trigger a deploy on a Render service.',
-  render_logs:
-    'Retrieve and analyze logs from a Render resource. Returns a processed summary by default (deduplicated errors, patterns, correlations). Pass raw: true for unprocessed lines.',
-  render_env_vars: 'Read or set environment variables on a Render service.',
-  render_inspect:
-    'Get detailed information about any Render resource — plan, region, last deploy, crash details, connection info.',
-  render_restart: 'Restart a running service without triggering a full deploy (no rebuild).',
-  render_run_command:
-    "Execute a one-off command in a service's environment (e.g., migrations, seed scripts).",
-  render_deploys:
-    'Recent deployment history for a service (timeline summary, regression flags within 30m of live).',
-  render_metrics:
-    'Performance metrics summary (peaks vs limits, trends). Pass raw: true for JSON series.',
+export { WORKSPACE_RESOURCE_URI };
+
+/** Static tool descriptions — live inventory is MCP resource render://workspace only. */
+
+export const TOOL_DESCRIPTIONS: Record<string, string> = {
+  render_workspace:
+    'Inspect one Render resource in depth (plan, region, deploy, connection info). ' +
+    `List all resource IDs via MCP resource ${WORKSPACE_RESOURCE_URI}. resourceId is required.`,
+  render_observe:
+    'Observe a resource: logs, metrics, deploy history, or bundle (all three). resourceId is required. ' +
+    `Default mode bundle. Inventory: ${WORKSPACE_RESOURCE_URI}.`,
   render_diagnose:
-    'One-shot incident brief: logs + deploy timeline + metrics. Suggests next tools.',
-  render_configure:
-    'Update service platform config (not env vars). Tier 1: safe changes immediate. Tier 2: requires confirmed:true AND user approval in chat first.',
+    'Incident brief for a service or Postgres (logs + deploys + metrics + hypothesis). resourceId is required. ' +
+    `Inventory: ${WORKSPACE_RESOURCE_URI}.`,
+  render_deploy:
+    'Trigger a deploy on a Render service. serviceId is required. ' +
+    `Inventory: ${WORKSPACE_RESOURCE_URI}.`,
+  render_service:
+    'Service actions: restart, run_command, env_vars (list/set), configure (plan/autoscaling). serviceId is required. ' +
+    `Inventory: ${WORKSPACE_RESOURCE_URI}.`,
 };
 
-export interface DescribeContext {
-  snapshot: TopologySnapshot | null;
-  lastRefreshOk: boolean;
-}
-
-function freshnessFooter(snapshot: TopologySnapshot): string {
-  const iso = new Date(snapshot.fetchedAt).toISOString();
-  const time = iso.slice(11, 19);
-  return `\n(Infrastructure state as of ${time} UTC)`;
-}
-
-export function describeTool(toolName: string, ctx: DescribeContext): string {
-  const base = BASE_DESCRIPTIONS[toolName];
-  if (!base) return toolName;
-  if (!ctx.snapshot) {
-    if (!ctx.lastRefreshOk) {
-      return base + '\n\n(Unable to reach Render API — will retry on next call.)';
-    }
-    return base + '\n\n(Loading infrastructure state...)';
-  }
-
-  const footer = freshnessFooter(ctx.snapshot);
-
-  switch (toolName) {
-    case 'render_deploy':
-    case 'render_restart':
-    case 'render_run_command':
-    case 'render_deploys':
-    case 'render_configure':
-      return base + '\n\n' + formatServicesTable(ctx.snapshot, false) + footer;
-
-    case 'render_logs':
-    case 'render_diagnose':
-      return base + '\n\n' + formatLogsTable(ctx.snapshot) + footer;
-
-    case 'render_env_vars':
-      return base + '\n\n' + formatEnvVarsTable(ctx.snapshot) + footer;
-
-    case 'render_inspect':
-    case 'render_metrics':
-      return base + '\n\n' + formatAllResourcesTable(ctx.snapshot) + footer;
-
-    default:
-      return base;
-  }
+export function getToolDescription(toolName: string): string {
+  return TOOL_DESCRIPTIONS[toolName] ?? toolName;
 }

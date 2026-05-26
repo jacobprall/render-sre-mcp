@@ -2,7 +2,6 @@ import { loadConfig } from '../../config.js';
 import type { HotResourceTracker } from '../../hot-resources.js';
 import * as api from '../../render-api.js';
 import type { DeployHint, TopologySnapshot } from '../../types/topology.js';
-import { describeTool } from './descriptions.js';
 import { enrichDeployHints } from './enrich.js';
 
 const MAX_PROCESSED_EVENTS = 100;
@@ -45,13 +44,6 @@ export class TopologyCache {
     } finally {
       this.refreshing = null;
     }
-  }
-
-  describe(toolName: string): string {
-    return describeTool(toolName, {
-      snapshot: this.snapshot,
-      lastRefreshOk: this.lastRefreshOk,
-    });
   }
 
   applyDeployEvent(

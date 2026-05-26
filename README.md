@@ -1,71 +1,50 @@
 # render-sre-mcp
 
-An SRE teammate for your Render infrastructure, delivered via MCP server. Connects to any MCP client and gives AI agents the ability to efficiently diagnose incidents, inspect resources, read metrics, and take safe remedial actions.
+An MCP server that connects AI coding agents to your [Render](https://render.com) workspace. Use it from Cursor or any MCP client to inspect services, read logs and metrics, understand deploy history, diagnose incidents, and take remedial action.
 
-## What it does
+## What you can do
 
-- **Live topology** — Cached infrastructure state embedded in every tool description. Agents always see your current services, error counts, and resource pressure.
-- **Incident diagnosis** — `render_diagnose` builds a one-shot brief from logs, deploys, and metrics with a confidence-rated hypothesis and suggested next steps.
-- **Log analysis** — `render_logs` deduplicates error patterns, summarizes HTTP traffic, and detects correlations (or returns raw lines on demand).
-- **Metrics** — `render_metrics` compares peaks to limits for memory, CPU, latency, and connections.
-- **Deploy history** — `render_deploys` timelines recent deploys and flags regression candidates within 30 min of go-live.
-- **Resource inspection** — `render_inspect` deep-dives any service, Postgres, or Key Value store.
-- **Remediation** — `render_deploy`, `render_restart`, `render_run_command`, `render_env_vars`, and `render_configure` with tiered safety: safe changes apply immediately, risky changes require explicit confirmation.
+- **Investigate problems** — Pull log summaries (deduplicated errors, HTTP patterns), metrics vs limits, and recent deploys. Use `render_observe` with `mode: bundle` for all three at once, or `render_diagnose` for a structured incident brief with a suggested cause and next steps.
+- **Inspect a resource** — Plan, region, connection info, last deploy, and crash details for any service, database, or key-value store.
+- **Ship and operate** — Trigger deploys, restart services, run one-off commands (migrations, seeds), manage environment variables, and change platform settings (plan, scaling, health checks) with guardrails on risky changes.
 
-## Deploy on Render
+## Tools and resources
 
-1. Create a Blueprint from this repo's `render.yaml`.
-2. Set `RENDER_API_KEY` (Dashboard → Environment).
-3. Optionally set `MCP_AUTH_TOKEN` for a separate client auth token (defaults to `RENDER_API_KEY`).
-4. Note the service URL after deploy (e.g. `https://render-mcp-server.onrender.com`).
+### Workspace inventory (read first)
 
-The server exposes MCP at `/mcp`, a health check at `/health`, and optionally `POST /webhooks/render` when `RENDER_WEBHOOK_SECRET` is set.
+- **`render://workspace`** — MCP resource with a fresh view of your workspace: service, Postgres, and Redis IDs, types, status, and deploy hints when available. Refreshes on a short cache interval, after deploys, and via webhooks on hosted deployments. Read this before calling other tools so you have the right `resourceId` or `serviceId`.
 
-### Webhooks (hosted, optional)
+### Tools
 
-Push deploy/build events into live tool descriptions without polling the API. Requires a **Professional** (or higher) Render workspace.
+- **`render_workspace`** — Deep inspect of one resource (`resourceId`): plan, region, connections, last deploy.
+- **`render_observe`** — Logs, metrics, deploy history, or all three in one call (`resourceId`, `mode`).
+  - Modes: `bundle` (default), `logs`, `metrics`, `deploys`
+  - Pass `raw: true` on logs or metrics for unprocessed output
+- **`render_diagnose`** — Incident brief for a service or Postgres (`resourceId`): likely cause, evidence, suggested next steps.
+- **`render_deploy`** — Start a deploy (`serviceId`, optional `clearCache`).
+- **`render_service`** — Operate on a service (`serviceId`, `action`): `restart`, `run_command`, `env_vars`, `configure`
+  - `env_vars`: `envAction` `list` or `set`; `reveal: true` to show values
+  - `configure`: plan downgrades and enabling auto-deploy need `confirmed: true` and user approval in chat
 
-1. Set `RENDER_WEBHOOK_SECRET` on the MCP service (signing secret from Dashboard → Workspace → Integrations → Webhooks).
-2. Register webhook URL: `https://YOUR-SERVICE.onrender.com/webhooks/render`
-3. Subscribe to: Deploy started/ended, Build started/ended
+You can also copy resource IDs from the Render Dashboard if your client does not read MCP resources.
 
-See [specs/001-webhook-deploy-updates/quickstart.md](specs/001-webhook-deploy-updates/quickstart.md) for verification steps.
-
-## Connect
-
-### Hosted (HTTP)
-
-Use your Render service URL with the auth token as the `Authorization` bearer:
-
-```json
-{
-  "mcpServers": {
-    "render": {
-      "url": "https://YOUR-SERVICE.onrender.com/mcp",
-      "headers": {
-        "Authorization": "Bearer <MCP_AUTH_TOKEN or RENDER_API_KEY>"
-      }
-    }
-  }
-}
-```
-
-### Local (stdio)
-
-Clone the repo, set your key, and point Cursor at the project:
+## Quick start (local)
 
 ```bash
-export RENDER_API_KEY=rnd_xxxxx
+cd render-agent  # or your clone path
 npm install
-npm run dev
+npm run build
+export RENDER_API_KEY=rnd_xxxxx
 ```
+
+Add to Cursor (`.cursor/mcp.json` or MCP settings):
 
 ```json
 {
   "mcpServers": {
     "render": {
-      "command": "npx",
-      "args": ["tsx", "src/index.ts"],
+      "command": "node",
+      "args": ["dist/index.js"],
       "cwd": "/path/to/render-agent",
       "env": {
         "RENDER_API_KEY": "rnd_xxxxx"
@@ -75,26 +54,46 @@ npm run dev
 }
 ```
 
-Without `PORT`, the server runs in stdio mode. With `PORT` set, it serves HTTP with Bearer auth on `/mcp`.
+Restart the MCP server in Cursor after code changes (`npm run build`).
 
-## Environment Variables
+## Hosted on Render
+
+Deploy from this repo's `render.yaml` (service name `render-mcp-server`).
+
+1. Create a Blueprint from the repo.
+2. Set `RENDER_API_KEY` in the service environment.
+3. Optionally set `MCP_AUTH_TOKEN` if you want a separate token for MCP clients (defaults to `RENDER_API_KEY`).
+
+Your MCP endpoint is `https://<your-service>.onrender.com/mcp` with `Authorization: Bearer <token>`.
+
+| Path | Purpose |
+|------|---------|
+| `/mcp` | MCP over HTTP |
+| `/health` | Health check |
+| `/webhooks/render` | Workspace webhooks (optional) |
+
+### Webhooks (optional)
+
+On Professional workspaces, you can register a webhook so deploy and build events update the live workspace inventory without polling.
+
+1. Set `RENDER_WEBHOOK_SECRET` on the MCP service (from Dashboard → Integrations → Webhooks).
+2. URL: `https://<your-service>.onrender.com/webhooks/render`
+3. Subscribe to deploy and build started/ended events.
+
+See [specs/001-webhook-deploy-updates/quickstart.md](specs/001-webhook-deploy-updates/quickstart.md) for setup and verification.
+
+## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `RENDER_API_KEY` | Yes | Render API key for accessing the Render platform |
-| `MCP_AUTH_TOKEN` | No | Separate token for authenticating MCP clients (defaults to `RENDER_API_KEY`) |
-| `PORT` | No | Set to enable HTTP mode (otherwise uses stdio) |
-| `RENDER_CACHE_TTL_MS` | No | Topology cache TTL in ms (default: 30000) |
-| `RENDER_LOG_DEFAULT_WINDOW_MIN` | No | Default log window in minutes (default: 10) |
-| `RENDER_WEBHOOK_SECRET` | No | Webhook signing secret; enables `POST /webhooks/render` in HTTP mode |
-| `RENDER_WEBHOOK_DEBOUNCE_MS` | No | Debounce for MCP `tools/listChanged` after webhooks (default: 2000) |
+| `RENDER_API_KEY` | Yes | Render API key |
+| `MCP_AUTH_TOKEN` | No | Bearer token for MCP clients (defaults to `RENDER_API_KEY`) |
+| `PORT` | No | When set, runs HTTP server; otherwise stdio |
+| `RENDER_CACHE_TTL_MS` | No | How often workspace inventory refreshes (default 30000) |
+| `RENDER_LOG_DEFAULT_WINDOW_MIN` | No | Default log lookback in minutes (default 10) |
+| `RENDER_WEBHOOK_SECRET` | No | Enables webhook endpoint in HTTP mode |
+| `RENDER_WEBHOOK_DEBOUNCE_MS` | No | Webhook notify debounce in ms (default 2000) |
 
 ## Requirements
 
-- Node.js >= 20.0.0
-
-## Notes
-
-Platform API access is implemented in `src/api/` as a thin REST client against `https://api.render.com/v1` (no third-party Render npm client).
-
-Live topology in tool descriptions relies on the MCP `tools/listChanged` notification and dynamic tool description updates. This is an experimental part of the MCP specification—client support varies. Cursor supports it; other clients may display stale descriptions until they implement the notification handler.
+- Node.js 20+

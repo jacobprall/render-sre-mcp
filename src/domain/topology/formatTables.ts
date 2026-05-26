@@ -62,18 +62,6 @@ export function formatLogsTable(snapshot: TopologySnapshot): string {
   return 'Resources:\n' + lines.join('\n');
 }
 
-export function formatEnvVarsTable(snapshot: TopologySnapshot): string {
-  if (snapshot.services.length === 0) {
-    return 'No services found. Deploy via render.yaml or the Render Dashboard to get started.';
-  }
-  const lines = snapshot.services.map(s => {
-    const type = TYPE_LABELS[s.type] ?? s.type;
-    const status = serviceStatusLabel(s);
-    return `${s.id} │ ${s.name} │ ${type} │ ${status}`;
-  });
-  return 'Services:\n' + lines.join('\n');
-}
-
 export function formatAllResourcesTable(snapshot: TopologySnapshot): string {
   const lines: string[] = [];
   for (const s of snapshot.services) {
