@@ -1,15 +1,26 @@
-# render-mcp-server
+# render-sre-mcp
 
-MCP server for operating Render infrastructure from Cursor and other MCP clients.
+An SRE teammate for your Render infrastructure, delivered via MCP server. Connects to any MCP client and gives AI agents the ability to efficiently diagnose incidents, inspect resources, read metrics, and take safe remedial actions.
+
+## What it does
+
+- **Live topology** — Cached infrastructure state embedded in every tool description. Agents always see your current services, error counts, and resource pressure.
+- **Incident diagnosis** — `render_diagnose` builds a one-shot brief from logs, deploys, and metrics with a confidence-rated hypothesis and suggested next steps.
+- **Log analysis** — `render_logs` deduplicates error patterns, summarizes HTTP traffic, and detects correlations (or returns raw lines on demand).
+- **Metrics** — `render_metrics` compares peaks to limits for memory, CPU, latency, and connections.
+- **Deploy history** — `render_deploys` timelines recent deploys and flags regression candidates within 30 min of go-live.
+- **Resource inspection** — `render_inspect` deep-dives any service, Postgres, or Key Value store.
+- **Remediation** — `render_deploy`, `render_restart`, `render_run_command`, `render_env_vars`, and `render_configure` with tiered safety: safe changes apply immediately, risky changes require explicit confirmation.
+
 
 ## Deploy on Render
 
-1. Create a new Blueprint from this repo's `render.yaml`.
-2. Set `RENDER_API_KEY` in the service's environment (Dashboard → Environment).
-3. Optionally set `MCP_AUTH_TOKEN` for a separate client auth token (defaults to `RENDER_API_KEY` if unset).
-4. After deploy, note the service URL (e.g. `https://render-mcp-server.onrender.com`).
+1. Create a Blueprint from this repo's `render.yaml`.
+2. Set `RENDER_API_KEY` (Dashboard → Environment).
+3. Optionally set `MCP_AUTH_TOKEN` for a separate client auth token (defaults to `RENDER_API_KEY`).
+4. Note the service URL after deploy (e.g. `https://render-mcp-server.onrender.com`).
 
-The service listens on `PORT` and exposes MCP at `/mcp` and health at `/health`.
+The server exposes MCP at `/mcp` and a health check at `/health`.
 
 ## Connect
 
@@ -55,7 +66,7 @@ npm run dev
 }
 ```
 
-Without `PORT`, the server uses stdio. With `PORT` set, it serves HTTP and requires the `Authorization: Bearer` header on `/mcp`.
+Without `PORT`, the server runs in stdio mode. With `PORT` set, it serves HTTP with Bearer auth on `/mcp`.
 
 ## Environment Variables
 
@@ -70,3 +81,7 @@ Without `PORT`, the server uses stdio. With `PORT` set, it serves HTTP and requi
 ## Requirements
 
 - Node.js >= 20.0.0
+
+## Notes
+
+Live topology in tool descriptions relies on the MCP `tools/listChanged` notification and dynamic tool description updates. This is an experimental part of the MCP specification—client support varies. Cursor supports it; other clients may display stale descriptions until they implement the notification handler.
